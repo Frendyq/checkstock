@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}Остатки — CheckStock{% endblock %}
+
+{% macro product_select() %}
+  <label>Товар
+    <select name="product_id" required>
+      {% for p in products %}<option value="{{ p.id }}">{{ p.sku }} · {{ p.name }}</option>{% endfor %}
+    </select>
+  </label>
+{% endmacro %}
+
+{% macro warehouse_select(name, label, warehouses, preselect=1) %}
+  <label>{{ label }}
+    <select name="{{ name }}" required>
+      {% for w in warehouses %}
+        <option value="{{ w.id }}" {% if loop.index == preselect %}selected{% endif %}>{{ w.name }}{% if w.deleted_at %} (удалён){% endif %}</option>
+      {% endfor %}
+    </select>
+  </label>
+{% endmacro %}
+
+{% macro qty_and_submit(button) %}
+  <label>Количество
+    <input type="number" name="qty" min="1" step="1" required>
+  </label>
+  <input type="hidden" name="request_id" value="{{ new_request_id() }}">
+  <button type="submit">{{ button }}</button>
+{% endmacro %}
+
+{% macro num(value) %}{% if value %}{{ value }}{% else %}<span class="zero">0</span>{% endif %}{% endmacro %}
+
+{% block content %}
+<h1>Где сейчас товар</h1>
+
+<div class="table-wrap">
+<table class="stock">
+  <thead>
+    <tr>
+      <th rowspan="2" class="left">Артикул</th>
+      <th rowspan="2" class="left">Товар</th>
+      {% for w in overview.warehouses %}
+        <th colspan="3" class="group">ФФ «{{ w.name }}»{% if w.deleted_at %} <span class="badge badge-deleted">удалён</span>{% endif %}</th>
+      {% endfor %}
+      <th colspan="3" class="group">Всего на ФФ</th>
+      <th colspan="3" class="group">В пути</th>
+    </tr>
+    <tr>
+      {% for w in overview.warehouses %}
+        <th class="group-start">Физически</th><th>Резерв FBS</th><th>Доступно</th>
+      {% endfor %}
+      <th class="group-start">Физически</th><th>Резерв FBS</th><th>Доступно</th>
+      <th class="group-start">Между ФФ</th><th>FBO → склад МП</th><th>FBS → клиент</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in overview.rows %}
+      <tr>
+        <td class="left sku">{{ row.product.sku }}</td>
+        <td class="left">{{ row.product.name }}</td>
+        {% for cell in row.cells %}
+          <td class="group-start">{{ num(cell.on_hand) }}</td>
+          <td>{{ num(cell.reserved) }}</td>
+          <td class="available">{{ num(cell.available) }}</td>
+        {% endfor %}
+        <td class="group-start total">{{ num(row.total.on_hand) }}</td>
+        <td class="total">{{ num(row.total.reserved) }}</td>
+        <td class="total available">{{ num(row.total.available) }}</td>
+        <td class="group-start">{{ num(row.transit.transfer) }}</td>
+        <td>{{ num(row.transit.fbo) }}</td>
+        <td>{{ num(row.transit.fbs) }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<details class="reconcile" open>
+  <summary>Сверка: всё принятое где-то числится</summary>
+  <table>
+    <thead>
+      <tr>
+        <th class="left">Артикул</th>
+        <th>Принято всего</th>
+        <th>= На ФФ</th>
+        <th>+ В пути</th>
+        <th>+ Принято складом МП (FBO)</th>
+        <th>+ Доставлено клиентам (FBS)</th>
+        <th>Сходится</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in overview.rows %}
+        <tr>
+          <td class="left sku">{{ row.product.sku }}</td>
+          <td>{{ row.received }}</td>
+          <td>{{ row.total.on_hand }}</td>
+          <td>{{ row.in_transit }}</td>
+          <td>{{ row.done_fbo }}</td>
+          <td>{{ row.done_fbs }}</td>
+          <td>{% if row.balanced %}<span class="badge badge-ok">да</span>{% else %}<span class="badge badge-error">расхождение</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+
+<h2>Оформить движение</h2>
+<div class="forms">
+  <form method="post" action="/receipts" class="card">
+    <h3>Приход на ФФ</h3>
+    {{ product_select() }}
+    {{ warehouse_select("warehouse_id", "ФФ", active_warehouses) }}
+    {{ qty_and_submit("Принять на склад") }}
+  </form>
+
+  <form method="post" action="/transfers" class="card">
+    <h3>Перемещение между ФФ</h3>
+    {{ product_select() }}
+    {{ warehouse_select("from_warehouse_id", "Откуда", source_warehouses) }}
+    {{ warehouse_select("to_warehouse_id", "Куда", active_warehouses, preselect=2) }}
+    {{ qty_and_submit("Отправить") }}
+  </form>
+
+  <form method="post" action="/fbs" class="card">
+    <h3>Резерв под заказ FBS</h3>
+    {{ product_select() }}
+    {{ warehouse_select("warehouse_id", "ФФ", active_warehouses) }}
+    {{ qty_and_submit("Зарезервировать") }}
+  </form>
+
+  <form method="post" action="/fbo" class="card">
+    <h3>Отправка FBO на склад МП</h3>
+    {{ product_select() }}
+    {{ warehouse_select("warehouse_id", "ФФ", active_warehouses) }}
+    {{ qty_and_submit("Отправить") }}
+  </form>
+</div>
+
+<h2>Документы в работе</h2>
+{% if shipments %}
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th class="left">№</th>
+      <th class="left">Тип</th>
+      <th class="left">Товар</th>
+      <th>Кол-во</th>
+      <th class="left">Откуда</th>
+      <th class="left">Куда</th>
+      <th class="left">Статус</th>
+      <th class="left">Действие</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in shipments %}
+      <tr>
+        <td class="left">{{ s.id }}</td>
+        <td class="left">
+          {% if s.kind == "transfer" %}Перемещение{% elif s.kind == "fbs" %}Заказ FBS{% else %}Поставка FBO{% endif %}
+        </td>
+        <td class="left"><span class="sku">{{ s.product.sku }}</span> {{ s.product.name }}</td>
+        <td>{{ s.qty }}</td>
+        <td class="left">ФФ {{ s.from_warehouse.label }}</td>
+        <td class="left">
+          {% if s.kind == "transfer" %}ФФ {{ s.to_warehouse.label }}{% elif s.kind == "fbs" %}Клиент{% else %}Склад маркетплейса{% endif %}
+        </td>
+        <td class="left">
+          {% if s.status == "reserved" %}<span class="badge badge-reserved">в резерве</span>{% else %}<span class="badge badge-transit">в пути</span>{% endif %}
+        </td>
+        <td class="left"><div class="actions">
+          {% if s.status == "reserved" %}
+            <form method="post" action="/shipments/{{ s.id }}/ship"><button type="submit">Отправить клиенту</button></form>
+            <form method="post" action="/shipments/{{ s.id }}/cancel"><button type="submit" class="secondary">Отменить резерв</button></form>
+          {% else %}
+            <form method="post" action="/shipments/{{ s.id }}/complete">
+              <button type="submit">
+                {% if s.kind == "transfer" %}Принять на ФФ{% elif s.kind == "fbs" %}Доставлено клиенту{% else %}Принято складом МП{% endif %}
+              </button>
+            </form>
+          {% endif %}
+        </div></td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">Нет резервов и товара в пути.</p>
+{% endif %}
+{% endblock %}

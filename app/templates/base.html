@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}CheckStock{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">CheckStock</a>
+    <nav>
+      <a href="/" {% if request.url.path == "/" %}class="current"{% endif %}>Остатки и движения</a>
+      <a href="/warehouses" {% if request.url.path == "/warehouses" %}class="current"{% endif %}>Склады ФФ</a>
+      <a href="/history" {% if request.url.path == "/history" %}class="current"{% endif %}>История операций</a>
+    </nav>
+  </header>
+
+  <main>
+    {% for kind in ("ok", "info", "error") %}
+      {% if request.query_params.get(kind) %}
+        <p class="flash flash-{{ kind }}" role="status">{{ request.query_params.get(kind) }}</p>
+      {% endif %}
+    {% endfor %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

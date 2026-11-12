@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}История операций — CheckStock{% endblock %}
+
+{% block content %}
+<h1>История операций</h1>
+
+{% if rows %}
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th class="left">Время</th>
+      <th class="left">Операция</th>
+      <th class="left">Товар</th>
+      <th>Кол-во</th>
+      <th class="left">Откуда</th>
+      <th class="left">Куда</th>
+      <th>Документ</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+      <tr>
+        <td class="left nowrap">{{ row.op.created_at | localtime }}</td>
+        <td class="left">{{ row.title }}</td>
+        <td class="left"><span class="sku">{{ row.op.product.sku }}</span> {{ row.op.product.name }}</td>
+        <td>{{ row.op.qty }}</td>
+        <td class="left">{{ row.source }}</td>
+        <td class="left">{{ row.target }}</td>
+        <td>{% if row.op.shipment_id %}№{{ row.op.shipment_id }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">Операций пока нет.</p>
+{% endif %}
+{% endblock %}
